@@ -18,6 +18,12 @@ GitHub Pages 地址：
 https://wangchao1984713.github.io/paodekuai-scorekeeper/
 ```
 
+国内手机没梯子时，`github.io` 和海外云端状态桶不保证稳定。给三个人长期用，推荐部署到香港轻量服务器，详见：
+
+```text
+DEPLOY.md
+```
+
 ## 本地运行
 
 ```bash
@@ -52,7 +58,7 @@ public-url.txt
 
 ## Render 在线部署
 
-这个项目需要一个能长期运行的 Node 服务，所以不能只用 GitHub Pages。推荐流程：
+这个项目需要一个能长期运行的 Node 服务，所以不能只用 GitHub Pages。国内直连更推荐香港轻量服务器；Render 作为备用流程：
 
 1. 把本目录推到 GitHub 仓库。
 2. 在 Render 新建 Blueprint/Web Service，选择仓库里的 `render.yaml`。
