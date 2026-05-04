@@ -202,6 +202,16 @@
       background: rgba(23, 163, 74, 0.06);
     }
 
+    .calc .digit {
+      color: var(--ink);
+      background: #fff;
+    }
+
+    .calc .utility {
+      color: var(--muted);
+      background: #f8fafc;
+    }
+
     .list {
       display: grid;
       gap: 7px;
@@ -323,16 +333,28 @@
         </div>
         <ul class="list" id="pending"></ul>
         <form class="submit-grid" id="scoreForm" style="margin-top:10px">
-          <input id="scoreInput" type="number" step="1" inputmode="numeric" placeholder="我的分数，如 10 或 -3">
+          <input id="scoreInput" type="text" inputmode="numeric" pattern="-?[0-9]*" placeholder="我的分数，如 10 或 -3">
           <div class="calc" aria-label="加减计分器">
-            <button type="button" class="plus" data-delta="1">+1</button>
-            <button type="button" class="plus" data-delta="5">+5</button>
             <button type="button" class="plus" data-delta="10">+10</button>
-            <button type="button" data-clear-score="true">清零</button>
-            <button type="button" class="minus" data-delta="-1">-1</button>
-            <button type="button" class="minus" data-delta="-5">-5</button>
+            <button type="button" class="plus" data-delta="5">+5</button>
+            <button type="button" class="plus" data-delta="1">+1</button>
+            <button type="button" class="utility" data-clear-score="true">清零</button>
+            <button type="button" class="digit" data-digit="7">7</button>
+            <button type="button" class="digit" data-digit="8">8</button>
+            <button type="button" class="digit" data-digit="9">9</button>
             <button type="button" class="minus" data-delta="-10">-10</button>
-            <button type="button" data-backspace-score="true">退格</button>
+            <button type="button" class="digit" data-digit="4">4</button>
+            <button type="button" class="digit" data-digit="5">5</button>
+            <button type="button" class="digit" data-digit="6">6</button>
+            <button type="button" class="minus" data-delta="-5">-5</button>
+            <button type="button" class="digit" data-digit="1">1</button>
+            <button type="button" class="digit" data-digit="2">2</button>
+            <button type="button" class="digit" data-digit="3">3</button>
+            <button type="button" class="minus" data-delta="-1">-1</button>
+            <button type="button" class="utility" data-toggle-sign="true">正负</button>
+            <button type="button" class="digit" data-digit="0">0</button>
+            <button type="button" class="utility" data-digit="00">00</button>
+            <button type="button" class="utility" data-backspace-score="true">退格</button>
           </div>
           <div class="actions">
             <button class="primary" type="submit" id="submitBtn">提交</button>
@@ -569,6 +591,28 @@
         dom.scoreInput.focus();
       };
     });
+
+    document.querySelectorAll("[data-digit]").forEach((button) => {
+      button.onclick = () => {
+        const digit = button.dataset.digit;
+        const value = dom.scoreInput.value;
+        const sign = value.startsWith("-") ? "-" : "";
+        const body = sign ? value.slice(1) : value;
+        const nextBody = body === "0" ? digit.replace(/^0+(?=\d)/, "") : body + digit;
+        dom.scoreInput.value = sign + (nextBody || "0");
+        dom.scoreInput.focus();
+      };
+    });
+
+    document.querySelector("[data-toggle-sign]").onclick = () => {
+      const value = dom.scoreInput.value.trim();
+      if (!value || value === "0") {
+        dom.scoreInput.value = "-";
+      } else {
+        dom.scoreInput.value = value.startsWith("-") ? value.slice(1) : `-${value}`;
+      }
+      dom.scoreInput.focus();
+    };
 
     document.querySelector("[data-clear-score]").onclick = () => {
       dom.scoreInput.value = "";
