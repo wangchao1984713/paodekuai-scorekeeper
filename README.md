@@ -4,6 +4,20 @@
 
 手机页面内置完整计分键盘，包含 `0-9`、`00`、`-` 负号、退格和清零。
 
+## 真云端静态版
+
+GitHub Pages 打开时会自动使用 MantleDB 云端 JSON 状态，不依赖本机电脑开机。云端状态桶：
+
+```text
+https://mantledb.sh/v2/paodekuai-scorekeeper-luge-1777905348/state
+```
+
+GitHub Pages 地址：
+
+```text
+https://wangchao1984713.github.io/paodekuai-scorekeeper/
+```
+
 ## 本地运行
 
 ```bash

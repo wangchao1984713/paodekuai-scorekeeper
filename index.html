@@ -395,6 +395,9 @@
     const DEVICE_KEY = "paodekuai.deviceId.v4";
     const IDS = ["a", "b", "c"];
     const EPSILON = 0.000001;
+    const CLOUD_STATE_URL = "https://mantledb.sh/v2/paodekuai-scorekeeper-luge-1777905348/state";
+    const CLOUD_MODE = location.hostname.endsWith("github.io") || location.search.includes("cloud=1");
+    const POLL_MS = 1200;
     const $ = (selector) => document.querySelector(selector);
     const dom = {
       mySeat: $("#mySeat"),
@@ -423,6 +426,7 @@
     let state = null;
     let me = "";
     let events = null;
+    let pollTimer = null;
     let toastTimer = null;
     const deviceId = getDeviceId();
 
@@ -436,6 +440,10 @@
     }
 
     function post(path, data) {
+      return CLOUD_MODE ? cloudPost(path, data) : serverPost(path, data);
+    }
+
+    function serverPost(path, data) {
       return fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -456,6 +464,7 @@
     }
 
     function connect() {
+      if (CLOUD_MODE) return connectCloud();
       if (events) events.close();
       events = new EventSource("/api/events");
       events.onopen = () => {
@@ -470,6 +479,172 @@
         dom.connectChip.textContent = "重连中";
         dom.connectChip.className = "chip bad";
       };
+    }
+
+    function connectCloud() {
+      if (pollTimer) clearInterval(pollTimer);
+      dom.connectChip.textContent = "云同步";
+      dom.connectChip.className = "chip good";
+      pollTimer = setInterval(() => {
+        readCloudState()
+          .then((latest) => {
+            state = publicStateFrom(latest);
+            render();
+            dom.connectChip.textContent = "云同步";
+            dom.connectChip.className = "chip good";
+          })
+          .catch(() => {
+            dom.connectChip.textContent = "重连中";
+            dom.connectChip.className = "chip bad";
+          });
+      }, POLL_MS);
+    }
+
+    async function cloudPost(path, data = {}) {
+      const working = await readCloudState();
+      let extra = {};
+
+      if (path === "/api/join") {
+        const device = String(data.deviceId || "").slice(0, 80);
+        if (!device) throw new Error("设备身份无效，请刷新页面");
+        const existing = working.devices[device];
+        if (existing && IDS.includes(existing)) {
+          state = publicStateFrom(working, { assignedPlayerId: existing });
+          return state;
+        }
+        const used = new Set(Object.values(working.devices || {}).filter((id) => IDS.includes(id)));
+        const nextPlayer = IDS.find((id) => !used.has(id));
+        if (!nextPlayer) throw new Error("三个座位已经分完了，请先清空后重新进入");
+        working.devices[device] = nextPlayer;
+        extra.assignedPlayerId = nextPlayer;
+      } else if (path === "/api/submit-score") {
+        const playerId = working.devices[String(data.deviceId || "")];
+        if (!playerId) throw new Error("本机还没有分配座位，请刷新页面");
+        const score = clean(Number(data.score));
+        if (!Number.isFinite(score)) throw new Error("分数必须是数字");
+        if (Number(data.roundNo) !== working.pending.roundNo) throw new Error("这一局已经变化，请刷新当前局后再提交");
+        working.pending.submissions[playerId] = {
+          score,
+          note: String(data.note || "").slice(0, 80),
+          at: new Date().toISOString()
+        };
+        const submittedIds = Object.keys(working.pending.submissions).filter((id) => IDS.includes(id));
+        if (submittedIds.length >= 2) extra.completedRound = completeCloudRound(working, submittedIds.slice(0, 2));
+      } else if (path === "/api/withdraw-score") {
+        const playerId = working.devices[String(data.deviceId || "")];
+        if (!playerId) throw new Error("本机还没有分配座位，请刷新页面");
+        delete working.pending.submissions[playerId];
+      } else if (path === "/api/undo-last") {
+        if (!working.rounds.length) throw new Error("暂无可撤销记录");
+        const last = working.rounds.reduce((current, round) => (round.roundNo > current.roundNo ? round : current), working.rounds[0]);
+        working.rounds = working.rounds.filter((round) => round.id !== last.id);
+        working.nextRoundNo = working.rounds.reduce((max, round) => Math.max(max, round.roundNo), 0) + 1;
+        working.pending = freshPending(working.nextRoundNo);
+        extra.undoneRound = last;
+      } else if (path === "/api/clear") {
+        working.rounds = [];
+        working.nextRoundNo = 1;
+        working.pending = freshPending(1);
+      } else if (path === "/api/reset-devices") {
+        working.devices = {};
+        working.pending = freshPending(working.nextRoundNo);
+      } else {
+        throw new Error("操作失败");
+      }
+
+      const saved = await writeCloudState(working);
+      state = publicStateFrom(saved, extra);
+      return state;
+    }
+
+    async function readCloudState() {
+      const res = await fetch(`${CLOUD_STATE_URL}?t=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("云端读取失败");
+      return normalizeCloudState(await res.json());
+    }
+
+    async function writeCloudState(nextState) {
+      nextState.savedAt = new Date().toISOString();
+      const res = await fetch(CLOUD_STATE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nextState)
+      });
+      if (!res.ok) throw new Error("云端保存失败");
+      return normalizeCloudState(nextState);
+    }
+
+    function normalizeCloudState(raw = {}) {
+      const players = IDS.map((id) => {
+        const saved = Array.isArray(raw.players) ? raw.players.find((item) => item && item.id === id) : null;
+        const seat = id.toUpperCase();
+        return { id, seat, name: saved?.name || seat };
+      });
+      const rounds = Array.isArray(raw.rounds) ? raw.rounds.map((round, index) => ({
+        id: String(round.id || `${Date.now()}-${index}`),
+        roundNo: Number(round.roundNo) || index + 1,
+        at: round.at || new Date().toISOString(),
+        manualPlayers: Array.isArray(round.manualPlayers) ? round.manualPlayers.filter((id) => IDS.includes(id)).slice(0, 2) : [],
+        scores: IDS.reduce((acc, id) => {
+          acc[id] = clean(Number(round.scores?.[id] || 0));
+          return acc;
+        }, {}),
+        note: String(round.note || "")
+      })) : [];
+      const nextRoundNo = Math.max(Number(raw.nextRoundNo) || 1, rounds.reduce((max, round) => Math.max(max, round.roundNo), 0) + 1);
+      const pending = freshPending(nextRoundNo);
+      const submissions = raw.pending?.submissions || {};
+      IDS.forEach((id) => {
+        if (submissions[id] && Number.isFinite(Number(submissions[id].score))) {
+          pending.submissions[id] = {
+            score: clean(Number(submissions[id].score)),
+            note: String(submissions[id].note || "").slice(0, 80),
+            at: submissions[id].at || new Date().toISOString()
+          };
+        }
+      });
+      const devices = {};
+      Object.entries(raw.devices || {}).forEach(([device, playerId]) => {
+        if (IDS.includes(playerId)) devices[String(device).slice(0, 80)] = playerId;
+      });
+      return { players, rounds, nextRoundNo, pending, devices, savedAt: raw.savedAt || null };
+    }
+
+    function publicStateFrom(raw, extra = {}) {
+      return {
+        players: raw.players,
+        rounds: raw.rounds,
+        nextRoundNo: raw.nextRoundNo,
+        pending: raw.pending,
+        assignedCount: Object.keys(raw.devices || {}).length,
+        savedAt: raw.savedAt,
+        ...extra
+      };
+    }
+
+    function freshPending(roundNo) {
+      return { roundNo, submissions: {} };
+    }
+
+    function completeCloudRound(working, manualPlayers) {
+      const scores = { a: 0, b: 0, c: 0 };
+      manualPlayers.forEach((id) => {
+        scores[id] = clean(working.pending.submissions[id].score);
+      });
+      const computedId = IDS.find((id) => !manualPlayers.includes(id));
+      scores[computedId] = clean(-manualPlayers.reduce((sum, id) => sum + scores[id], 0));
+      const round = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        roundNo: working.pending.roundNo,
+        at: new Date().toISOString(),
+        manualPlayers,
+        scores,
+        note: ""
+      };
+      working.rounds.push(round);
+      working.nextRoundNo = round.roundNo + 1;
+      working.pending = freshPending(working.nextRoundNo);
+      return round;
     }
 
     function render() {
