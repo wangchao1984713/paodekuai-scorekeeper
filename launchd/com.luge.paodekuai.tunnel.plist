@@ -6,18 +6,26 @@
   <string>com.luge.paodekuai.tunnel</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>/Users/luzhiqiang/Documents/Playground/projects/paodekuai-scorekeeper/tunnel-keeper.sh</string>
+    <string>/usr/bin/ssh</string>
+    <string>-o</string>
+    <string>StrictHostKeyChecking=accept-new</string>
+    <string>-o</string>
+    <string>ServerAliveInterval=30</string>
+    <string>-o</string>
+    <string>ExitOnForwardFailure=yes</string>
+    <string>-R</string>
+    <string>80:127.0.0.1:4180</string>
+    <string>nokey@localhost.run</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/tmp</string>
+  <string>/Users/luzhiqiang/Library/Application Support/paodekuai-scorekeeper</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/Users/luzhiqiang/Documents/Playground/projects/paodekuai-scorekeeper/logs/tunnel.launchd.log</string>
+  <string>/Users/luzhiqiang/Library/Application Support/paodekuai-scorekeeper/tunnel.launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/luzhiqiang/Documents/Playground/projects/paodekuai-scorekeeper/logs/tunnel.launchd.err.log</string>
+  <string>/Users/luzhiqiang/Library/Application Support/paodekuai-scorekeeper/tunnel.launchd.err.log</string>
 </dict>
 </plist>

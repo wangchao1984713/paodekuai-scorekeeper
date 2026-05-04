@@ -3,10 +3,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
+APP_SUPPORT="$HOME/Library/Application Support/paodekuai-scorekeeper"
+TUNNEL_LAUNCH_LOG="$APP_SUPPORT/tunnel.launchd.log"
+TUNNEL_LAUNCH_ERR="$APP_SUPPORT/tunnel.launchd.err.log"
+PUBLIC_URL_FILE="$ROOT/public-url.txt"
 UID_VALUE="$(id -u)"
 
-mkdir -p "$AGENTS_DIR" "$ROOT/logs"
-chmod +x "$ROOT/tunnel-keeper.sh"
+mkdir -p "$AGENTS_DIR" "$ROOT/logs" "$APP_SUPPORT"
+: >"$TUNNEL_LAUNCH_LOG"
+: >"$TUNNEL_LAUNCH_ERR"
 
 for label in com.luge.paodekuai.tunnel com.luge.paodekuai.scorekeeper; do
   /bin/launchctl bootout "gui/$UID_VALUE/$label" >/dev/null 2>&1 || true
@@ -24,6 +29,21 @@ cp "$ROOT/launchd/com.luge.paodekuai.tunnel.plist" "$AGENTS_DIR/com.luge.paodeku
 /bin/launchctl enable "gui/$UID_VALUE/com.luge.paodekuai.scorekeeper"
 /bin/launchctl enable "gui/$UID_VALUE/com.luge.paodekuai.tunnel"
 
+PUBLIC_URL=""
+for _ in $(seq 1 60); do
+  PUBLIC_URL="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.lhr\.life' "$TUNNEL_LAUNCH_LOG" | tail -1 || true)"
+  if [ -n "$PUBLIC_URL" ]; then
+    printf '%s\n' "$PUBLIC_URL" >"$PUBLIC_URL_FILE"
+    break
+  fi
+  sleep 0.5
+done
+
 echo "已安装后台常驻服务。"
 echo "本地服务: http://127.0.0.1:4180"
-echo "公网地址生成中，稍后查看: $ROOT/public-url.txt"
+if [ -n "$PUBLIC_URL" ]; then
+  echo "公网地址: $PUBLIC_URL"
+  echo "地址文件: $PUBLIC_URL_FILE"
+else
+  echo "公网地址生成中，稍后查看: $TUNNEL_LAUNCH_LOG"
+fi
