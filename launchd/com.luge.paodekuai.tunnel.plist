@@ -6,16 +6,8 @@
   <string>com.luge.paodekuai.tunnel</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/ssh</string>
-    <string>-o</string>
-    <string>StrictHostKeyChecking=accept-new</string>
-    <string>-o</string>
-    <string>ServerAliveInterval=30</string>
-    <string>-o</string>
-    <string>ExitOnForwardFailure=yes</string>
-    <string>-R</string>
-    <string>80:127.0.0.1:4180</string>
-    <string>nokey@localhost.run</string>
+    <string>/bin/bash</string>
+    <string>/Users/luzhiqiang/Library/Application Support/paodekuai-scorekeeper/tunnel-launcher.sh</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/luzhiqiang/Library/Application Support/paodekuai-scorekeeper</string>

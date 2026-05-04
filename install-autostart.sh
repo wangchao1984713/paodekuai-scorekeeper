@@ -12,14 +12,17 @@ UID_VALUE="$(id -u)"
 mkdir -p "$AGENTS_DIR" "$ROOT/logs" "$APP_SUPPORT"
 : >"$TUNNEL_LAUNCH_LOG"
 : >"$TUNNEL_LAUNCH_ERR"
+cp "$ROOT/tunnel-launcher.sh" "$APP_SUPPORT/tunnel-launcher.sh"
+chmod +x "$APP_SUPPORT/tunnel-launcher.sh"
 
 for label in com.luge.paodekuai.tunnel com.luge.paodekuai.scorekeeper; do
   /bin/launchctl bootout "gui/$UID_VALUE/$label" >/dev/null 2>&1 || true
 done
 
 pkill -f "node .*paodekuai-scorekeeper/server.js" >/dev/null 2>&1 || true
-pkill -f "ssh .*localhost.run.*127.0.0.1:4180" >/dev/null 2>&1 || true
+pkill -f "ssh .*-R .*127.0.0.1:4180.*localhost.run" >/dev/null 2>&1 || true
 pkill -f "paodekuai-scorekeeper/tunnel-keeper.sh" >/dev/null 2>&1 || true
+pkill -f "paodekuai-scorekeeper/tunnel-launcher.sh" >/dev/null 2>&1 || true
 
 cp "$ROOT/launchd/com.luge.paodekuai.scorekeeper.plist" "$AGENTS_DIR/com.luge.paodekuai.scorekeeper.plist"
 cp "$ROOT/launchd/com.luge.paodekuai.tunnel.plist" "$AGENTS_DIR/com.luge.paodekuai.tunnel.plist"
