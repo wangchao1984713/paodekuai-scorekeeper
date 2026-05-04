@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>跑得快计分</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --bg: #FAFAFA;
+      --fg: #111111;
+      --accent: #2F6FEB;
+      --muted: #6B6B6B;
+      --border: #E5E5E5;
+      --surface: #FFFFFF;
+      --success: #17A34A;
+      --danger: #DC2626;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input { font: inherit; }
+
+    button {
+      min-height: 46px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: var(--surface);
+      color: var(--fg);
+    }
+
+    button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: var(--surface);
+      font-weight: 700;
+    }
+
+    button.danger {
+      color: var(--danger);
+      border-color: rgba(220, 38, 38, 0.28);
+    }
+
+    button:disabled {
+      color: var(--muted);
+      background: #F3F3F3;
+    }
+
+    input {
+      width: 100%;
+      min-height: 50px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      outline: none;
+      background: var(--surface);
+      font-size: 18px;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(47, 111, 235, 0.12);
+    }
+
+    .app {
+      width: min(100% - 20px, 430px);
+      margin: 0 auto;
+      padding: max(12px, env(safe-area-inset-top)) 0 28px;
+    }
+
+    .top {
+      display: grid;
+      gap: 10px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1, h2, p { margin: 0; }
+
+    h1 {
+      font-size: 24px;
+      line-height: 1.18;
+    }
+
+    h2 {
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .chips, .actions, .scores, .identity {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      min-height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .chip.good {
+      color: var(--success);
+      border-color: rgba(23, 163, 74, 0.28);
+    }
+
+    .chip.bad {
+      color: var(--danger);
+      border-color: rgba(220, 38, 38, 0.28);
+    }
+
+    .stack {
+      display: grid;
+      gap: 12px;
+      padding-top: 12px;
+    }
+
+    .box {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 13px;
+    }
+
+    .box-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .box-head small {
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .seat-card {
+      flex: 1;
+      min-height: 70px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(47, 111, 235, 0.06);
+    }
+
+    .seat-card strong {
+      color: var(--accent);
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .submit-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .actions button { flex: 1 1 120px; }
+
+    .calc {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .calc button {
+      min-height: 44px;
+      padding: 8px 6px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .calc .minus {
+      color: var(--danger);
+      border-color: rgba(220, 38, 38, 0.28);
+      background: rgba(220, 38, 38, 0.05);
+    }
+
+    .calc .plus {
+      color: var(--success);
+      border-color: rgba(23, 163, 74, 0.28);
+      background: rgba(23, 163, 74, 0.06);
+    }
+
+    .list {
+      display: grid;
+      gap: 7px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .line {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    .line:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .line b {
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .scoreboard .line {
+      min-height: 42px;
+      align-items: center;
+      font-size: 17px;
+    }
+
+    .history-line {
+      display: grid;
+      gap: 5px;
+      border-top: 1px solid var(--border);
+      padding-top: 9px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .history-line:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .scores {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .positive { color: var(--success); }
+    .negative { color: var(--danger); }
+
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 8px 0;
+    }
+
+    .toast {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: max(12px, env(safe-area-inset-bottom));
+      max-width: 430px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--surface);
+      box-shadow: 0 2px 8px rgba(17, 17, 17, 0.08);
+      opacity: 0;
+      transform: translateY(14px);
+      pointer-events: none;
+      transition: 160ms ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <div>
+        <h1>跑得快计分</h1>
+        <p class="muted">打开网址自动分 A/B/C。你只填自己的分数。</p>
+      </div>
+      <div class="chips">
+        <span class="chip" id="roundCount">0 局</span>
+        <span class="chip good" id="auditChip">合计 0</span>
+        <span class="chip" id="connectChip">连接中</span>
+      </div>
+    </header>
+
+    <div class="stack">
+      <section class="box">
+        <div class="box-head">
+          <h2>我的座位</h2>
+          <small id="assignedText">自动分配中</small>
+        </div>
+        <div class="identity">
+          <div class="seat-card"><strong id="mySeat">-</strong></div>
+          <div style="flex:2">
+            <p class="muted">这台手机只记录这个座位的分数，刷新不会变。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="box">
+        <div class="box-head">
+          <h2>本局</h2>
+          <small id="roundLabel">第 1 局</small>
+        </div>
+        <ul class="list" id="pending"></ul>
+        <form class="submit-grid" id="scoreForm" style="margin-top:10px">
+          <input id="scoreInput" type="number" step="1" inputmode="numeric" placeholder="我的分数，如 10 或 -3">
+          <div class="calc" aria-label="加减计分器">
+            <button type="button" class="plus" data-delta="1">+1</button>
+            <button type="button" class="plus" data-delta="5">+5</button>
+            <button type="button" class="plus" data-delta="10">+10</button>
+            <button type="button" data-clear-score="true">清零</button>
+            <button type="button" class="minus" data-delta="-1">-1</button>
+            <button type="button" class="minus" data-delta="-5">-5</button>
+            <button type="button" class="minus" data-delta="-10">-10</button>
+            <button type="button" data-backspace-score="true">退格</button>
+          </div>
+          <div class="actions">
+            <button class="primary" type="submit" id="submitBtn">提交</button>
+            <button type="button" id="withdrawBtn">撤回</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="box scoreboard">
+        <div class="box-head">
+          <h2>三人分数榜</h2>
+          <small id="savedText">本机服务</small>
+        </div>
+        <ul class="list" id="totals"></ul>
+      </section>
+
+      <section class="box">
+        <div class="box-head">
+          <h2>结算</h2>
+          <small id="settlementNet">净额 0</small>
+        </div>
+        <ul class="list" id="settlement"></ul>
+      </section>
+
+      <section class="box">
+        <div class="box-head">
+          <h2>流水</h2>
+          <small id="historySummary">暂无</small>
+        </div>
+        <div class="list" id="history"></div>
+      </section>
+
+      <section class="box">
+        <div class="actions">
+          <button type="button" id="copyBtn">复制结算</button>
+          <button type="button" id="undoBtn">撤销最近</button>
+          <button type="button" class="danger" id="clearBtn">清空</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const DEVICE_KEY = "paodekuai.deviceId.v4";
+    const IDS = ["a", "b", "c"];
+    const EPSILON = 0.000001;
+    const $ = (selector) => document.querySelector(selector);
+    const dom = {
+      mySeat: $("#mySeat"),
+      assignedText: $("#assignedText"),
+      pending: $("#pending"),
+      totals: $("#totals"),
+      settlement: $("#settlement"),
+      history: $("#history"),
+      scoreForm: $("#scoreForm"),
+      scoreInput: $("#scoreInput"),
+      submitBtn: $("#submitBtn"),
+      withdrawBtn: $("#withdrawBtn"),
+      roundLabel: $("#roundLabel"),
+      roundCount: $("#roundCount"),
+      auditChip: $("#auditChip"),
+      connectChip: $("#connectChip"),
+      savedText: $("#savedText"),
+      settlementNet: $("#settlementNet"),
+      historySummary: $("#historySummary"),
+      copyBtn: $("#copyBtn"),
+      undoBtn: $("#undoBtn"),
+      clearBtn: $("#clearBtn"),
+      toast: $("#toast")
+    };
+
+    let state = null;
+    let me = "";
+    let events = null;
+    let toastTimer = null;
+    const deviceId = getDeviceId();
+
+    function getDeviceId() {
+      let id = localStorage.getItem(DEVICE_KEY);
+      if (!id) {
+        id = crypto.randomUUID ? crypto.randomUUID() : `device-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        localStorage.setItem(DEVICE_KEY, id);
+      }
+      return id;
+    }
+
+    function post(path, data) {
+      return fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data || {})
+      }).then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || "操作失败");
+        return body;
+      });
+    }
+
+    function join() {
+      return post("/api/join", { deviceId }).then((data) => {
+        me = data.assignedPlayerId;
+        state = data;
+        render();
+      });
+    }
+
+    function connect() {
+      if (events) events.close();
+      events = new EventSource("/api/events");
+      events.onopen = () => {
+        dom.connectChip.textContent = "已同步";
+        dom.connectChip.className = "chip good";
+      };
+      events.onmessage = (event) => {
+        state = JSON.parse(event.data);
+        render();
+      };
+      events.onerror = () => {
+        dom.connectChip.textContent = "重连中";
+        dom.connectChip.className = "chip bad";
+      };
+    }
+
+    function render() {
+      if (!state) return;
+      renderSeat();
+      renderPending();
+      renderTotals();
+      renderSettlement();
+      renderHistory();
+      renderStatus();
+    }
+
+    function renderSeat() {
+      const current = player(me);
+      dom.mySeat.textContent = current ? current.seat : "-";
+      dom.assignedText.textContent = current ? `已分配 ${current.seat}` : "未分配";
+      dom.submitBtn.disabled = !current;
+    }
+
+    function renderPending() {
+      const pending = state.pending || { roundNo: state.nextRoundNo, submissions: {} };
+      const submissions = pending.submissions || {};
+      const mine = me ? submissions[me] : null;
+      dom.roundLabel.textContent = `第 ${pending.roundNo} 局`;
+      dom.submitBtn.textContent = mine ? "修改" : "提交";
+      dom.withdrawBtn.disabled = !mine;
+      if (mine && document.activeElement !== dom.scoreInput) dom.scoreInput.value = mine.score;
+      const submitted = Object.keys(submissions).length;
+      dom.pending.innerHTML = state.players.map((p) => {
+        const item = submissions[p.id];
+        return `<li class="line"><span>${p.seat}</span><b class="${item ? cls(item.score) : ""}">${item ? text(item.score) : "未提交"}</b></li>`;
+      }).join("") + `<li class="line"><span>状态</span><b>${submitted >= 2 ? "已成局" : `还差 ${2 - submitted} 人`}</b></li>`;
+    }
+
+    function renderTotals() {
+      const totals = getTotals();
+      dom.totals.innerHTML = state.players.map((p) => `
+        <li class="line"><span>${p.seat}</span><b class="${cls(totals[p.id])}">${text(totals[p.id])}</b></li>
+      `).join("");
+    }
+
+    function renderSettlement() {
+      const totals = getTotals();
+      const rows = settle(totals);
+      dom.settlementNet.textContent = `净额 ${text(sumScores(totals))}`;
+      dom.settlement.innerHTML = rows.length ? rows.map((row) => `
+        <li class="line"><span>${seatOf(row.from)} 给 ${seatOf(row.to)}</span><b>${row.amount}</b></li>
+      `).join("") : `<li class="line"><span>当前无需结算</span><b>0</b></li>`;
+    }
+
+    function renderHistory() {
+      dom.historySummary.textContent = state.rounds.length ? `${state.rounds.length} 局` : "暂无";
+      if (!state.rounds.length) {
+        dom.history.innerHTML = `<div class="empty">还没有流水</div>`;
+        return;
+      }
+      dom.history.innerHTML = [...state.rounds].sort((a, b) => b.roundNo - a.roundNo).map((round) => `
+        <div class="history-line">
+          <div class="scores"><b>第 ${round.roundNo} 局</b><span class="muted">${time(round.at)}</span></div>
+          <div class="scores">${state.players.map((p) => `<span class="${cls(round.scores[p.id])}">${p.seat} ${text(round.scores[p.id])}</span>`).join("")}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderStatus() {
+      const totals = getTotals();
+      const good = Math.abs(sumScores(totals)) <= EPSILON && state.rounds.every((r) => Math.abs(sumScores(r.scores)) <= EPSILON);
+      dom.roundCount.textContent = `${state.rounds.length} 局`;
+      dom.auditChip.textContent = good ? "合计 0" : "有异常";
+      dom.auditChip.className = `chip ${good ? "good" : "bad"}`;
+      dom.savedText.textContent = state.savedAt ? time(state.savedAt) : "未保存";
+      const hasRounds = state.rounds.length > 0;
+      dom.copyBtn.disabled = !hasRounds;
+      dom.undoBtn.disabled = !hasRounds;
+      dom.clearBtn.disabled = !hasRounds && Object.keys(state.pending.submissions || {}).length === 0;
+    }
+
+    dom.scoreForm.onsubmit = (event) => {
+      event.preventDefault();
+      if (!me) return toast("还没分配座位");
+      const score = Number(dom.scoreInput.value);
+      if (!Number.isFinite(score) || dom.scoreInput.value.trim() === "") return toast("请输入分数");
+      post("/api/submit-score", { deviceId, score, roundNo: state.pending.roundNo })
+        .then((data) => {
+          if (data.completedRound) dom.scoreInput.value = "";
+          toast(data.completedRound ? `第 ${data.completedRound.roundNo} 局已记录` : "已提交");
+        })
+        .catch((error) => toast(error.message));
+    };
+
+    dom.withdrawBtn.onclick = () => {
+      post("/api/withdraw-score", { deviceId })
+        .then(() => {
+          dom.scoreInput.value = "";
+          toast("已撤回");
+        })
+        .catch((error) => toast(error.message));
+    };
+
+    dom.undoBtn.onclick = () => confirm("撤销最近一局？") && post("/api/undo-last").then(() => toast("已撤销")).catch((error) => toast(error.message));
+    dom.clearBtn.onclick = () => confirm("清空整场分数？") && post("/api/clear").then(() => {
+      dom.scoreInput.value = "";
+      toast("已清空");
+    }).catch((error) => toast(error.message));
+
+    document.querySelectorAll("[data-delta]").forEach((button) => {
+      button.onclick = () => {
+        const current = Number(dom.scoreInput.value || 0);
+        const next = clean((Number.isFinite(current) ? current : 0) + Number(button.dataset.delta));
+        dom.scoreInput.value = next;
+        dom.scoreInput.focus();
+      };
+    });
+
+    document.querySelector("[data-clear-score]").onclick = () => {
+      dom.scoreInput.value = "";
+      dom.scoreInput.focus();
+    };
+
+    document.querySelector("[data-backspace-score]").onclick = () => {
+      dom.scoreInput.value = dom.scoreInput.value.slice(0, -1);
+      dom.scoreInput.focus();
+    };
+
+    dom.copyBtn.onclick = async () => {
+      const summary = summaryText();
+      try {
+        await navigator.clipboard.writeText(summary);
+      } catch {
+        const area = document.createElement("textarea");
+        area.value = summary;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        area.remove();
+      }
+      toast("结算已复制");
+    };
+
+    function getTotals() {
+      return state.players.reduce((acc, p) => {
+        acc[p.id] = clean(state.rounds.reduce((sum, round) => sum + Number(round.scores[p.id] || 0), 0));
+        return acc;
+      }, {});
+    }
+
+    function settle(totals) {
+      const creditors = state.players.map((p) => ({ id: p.id, amount: clean(totals[p.id]) })).filter((x) => x.amount > EPSILON).sort((a, b) => b.amount - a.amount);
+      const debtors = state.players.map((p) => ({ id: p.id, amount: clean(-totals[p.id]) })).filter((x) => x.amount > EPSILON).sort((a, b) => b.amount - a.amount);
+      const result = [];
+      let i = 0;
+      let j = 0;
+      while (i < creditors.length && j < debtors.length) {
+        const amount = clean(Math.min(creditors[i].amount, debtors[j].amount));
+        if (amount > EPSILON) result.push({ from: debtors[j].id, to: creditors[i].id, amount });
+        creditors[i].amount = clean(creditors[i].amount - amount);
+        debtors[j].amount = clean(debtors[j].amount - amount);
+        if (creditors[i].amount <= EPSILON) i += 1;
+        if (debtors[j].amount <= EPSILON) j += 1;
+      }
+      return result;
+    }
+
+    function summaryText() {
+      const totals = getTotals();
+      const rows = settle(totals);
+      return [
+        `跑得快结算：${state.rounds.length} 局`,
+        ...state.players.map((p) => `${p.seat}: ${text(totals[p.id])}`),
+        ...(rows.length ? rows.map((r) => `${seatOf(r.from)} 给 ${seatOf(r.to)} ${r.amount}`) : ["无需结算"])
+      ].join("\n");
+    }
+
+    function player(id) { return state.players.find((p) => p.id === id); }
+    function seatOf(id) { return player(id)?.seat || id.toUpperCase(); }
+    function sumScores(scores) { return clean(IDS.reduce((sum, id) => sum + Number(scores[id] || 0), 0)); }
+    function clean(value) {
+      const number = Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+      return Object.is(number, -0) ? 0 : number;
+    }
+    function text(value) {
+      const score = clean(value);
+      return score > 0 ? `+${score}` : String(score);
+    }
+    function cls(value) {
+      if (value > 0) return "positive";
+      if (value < 0) return "negative";
+      return "";
+    }
+    function time(value) {
+      return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+    }
+    function toast(message) {
+      clearTimeout(toastTimer);
+      dom.toast.textContent = message;
+      dom.toast.classList.add("show");
+      toastTimer = setTimeout(() => dom.toast.classList.remove("show"), 1800);
+    }
+
+    join().then(connect).catch((error) => {
+      dom.connectChip.textContent = "连接失败";
+      dom.connectChip.className = "chip bad";
+      dom.assignedText.textContent = "分配失败";
+      toast(error.message);
+    });
+  </script>
+</body>
+</html>
