@@ -15,6 +15,7 @@ const DEFAULT_PLAYERS = [
   { id: "b", seat: "B", name: "B" },
   { id: "c", seat: "C", name: "C" }
 ];
+const DEVICE_TTL_MS = Number(process.env.DEVICE_TTL_MS || 90_000);
 
 let clients = new Set();
 let state = loadState();
@@ -37,6 +38,12 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/api/join") {
       return handleJoin(req, res);
+    }
+    if (req.method === "POST" && url.pathname === "/api/heartbeat") {
+      return handleHeartbeat(req, res);
+    }
+    if (req.method === "POST" && url.pathname === "/api/leave") {
+      return handleLeave(req, res);
     }
     if (req.method === "POST" && url.pathname === "/api/submit-score") {
       return handleSubmitScore(req, res);
@@ -154,6 +161,7 @@ function normalizeScores(scores) {
 }
 
 function publicState(extra = {}) {
+  pruneExpiredDevices();
   return {
     players: state.players,
     rounds: state.rounds,
@@ -169,21 +177,52 @@ async function handleJoin(req, res) {
   const body = await readBody(req);
   const deviceId = sanitizeDeviceId(body.deviceId);
   if (!deviceId) return sendJson(res, { error: "设备身份无效，请刷新页面" }, 400);
+  pruneExpiredDevices();
 
-  const existing = state.devices[deviceId];
+  const existing = state.devices[deviceId]?.playerId;
   if (existing && PLAYER_IDS.includes(existing)) {
+    state.devices[deviceId] = touchDevice(existing);
+    persistAndBroadcast();
     return sendJson(res, publicState({ assignedPlayerId: existing }));
   }
 
-  const used = new Set(Object.values(state.devices || {}).filter((id) => PLAYER_IDS.includes(id)));
+  const used = new Set(Object.values(state.devices || {}).map((record) => record.playerId).filter((id) => PLAYER_IDS.includes(id)));
   const nextPlayer = PLAYER_IDS.find((id) => !used.has(id));
   if (!nextPlayer) {
     return sendJson(res, { error: "三个座位已经分完了，请先重置座位" }, 409);
   }
 
-  state.devices[deviceId] = nextPlayer;
+  state.devices[deviceId] = touchDevice(nextPlayer);
   persistAndBroadcast();
   sendJson(res, publicState({ assignedPlayerId: nextPlayer }));
+}
+
+async function handleHeartbeat(req, res) {
+  const body = await readBody(req);
+  const deviceId = sanitizeDeviceId(body.deviceId);
+  if (!deviceId) return sendJson(res, { error: "设备身份无效，请刷新页面" }, 400);
+  pruneExpiredDevices();
+
+  const playerId = state.devices[deviceId]?.playerId;
+  if (!PLAYER_IDS.includes(playerId)) {
+    return sendJson(res, { error: "座位已释放，请刷新后重新进入" }, 409);
+  }
+
+  state.devices[deviceId] = touchDevice(playerId);
+  persistAndBroadcast();
+  sendJson(res, publicState({ assignedPlayerId: playerId }));
+}
+
+async function handleLeave(req, res) {
+  const body = await readBody(req);
+  const deviceId = sanitizeDeviceId(body.deviceId);
+  if (!deviceId) return sendJson(res, { error: "设备身份无效，请刷新页面" }, 400);
+  const leftPlayerId = state.devices[deviceId]?.playerId || null;
+  if (leftPlayerId) {
+    delete state.devices[deviceId];
+    persistAndBroadcast();
+  }
+  sendJson(res, publicState({ leftPlayerId }));
 }
 
 async function handleSubmitScore(req, res) {
@@ -257,6 +296,7 @@ function completeRound(manualPlayers) {
 }
 
 function persistAndBroadcast() {
+  pruneExpiredDevices();
   state.savedAt = new Date().toISOString();
   fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2));
   broadcast();
@@ -332,23 +372,60 @@ function readBody(req) {
 
 function resolvePlayerFromRequest(body) {
   if (body.deviceId) {
+    pruneExpiredDevices();
     const deviceId = sanitizeDeviceId(body.deviceId);
-    return state.devices?.[deviceId] || null;
+    const playerId = state.devices?.[deviceId]?.playerId;
+    if (!PLAYER_IDS.includes(playerId)) return null;
+    state.devices[deviceId] = touchDevice(playerId);
+    return playerId;
   }
   if (PLAYER_IDS.includes(body.playerId)) return body.playerId;
   return null;
 }
 
 function normalizeDevices(devices) {
+  const now = Date.now();
   const normalized = {};
   const used = new Set();
-  Object.entries(devices || {}).forEach(([deviceId, playerId]) => {
+  Object.entries(devices || {}).forEach(([deviceId, rawRecord]) => {
     const safeDeviceId = sanitizeDeviceId(deviceId);
-    if (!safeDeviceId || !PLAYER_IDS.includes(playerId) || used.has(playerId)) return;
-    normalized[safeDeviceId] = playerId;
-    used.add(playerId);
+    const record = normalizeDeviceRecord(rawRecord);
+    if (!safeDeviceId || !record || !isActiveDevice(record, now) || used.has(record.playerId)) return;
+    normalized[safeDeviceId] = record;
+    used.add(record.playerId);
   });
   return normalized;
+}
+
+function normalizeDeviceRecord(record) {
+  if (!record || typeof record !== "object") return null;
+  const playerId = record.playerId || record.id;
+  const lastSeen = String(record.lastSeen || record.seenAt || "").trim();
+  if (!PLAYER_IDS.includes(playerId) || !lastSeen) return null;
+  return { playerId, lastSeen };
+}
+
+function isActiveDevice(record, now = Date.now()) {
+  if (!record || !PLAYER_IDS.includes(record.playerId)) return false;
+  const seenAt = Date.parse(record.lastSeen || "");
+  return Number.isFinite(seenAt) && now - seenAt <= DEVICE_TTL_MS;
+}
+
+function touchDevice(playerId) {
+  return { playerId, lastSeen: new Date().toISOString() };
+}
+
+function pruneExpiredDevices(now = Date.now()) {
+  const nextDevices = {};
+  const used = new Set();
+  Object.entries(state.devices || {}).forEach(([deviceId, rawRecord]) => {
+    const safeDeviceId = sanitizeDeviceId(deviceId);
+    const record = normalizeDeviceRecord(rawRecord);
+    if (!safeDeviceId || !record || !isActiveDevice(record, now) || used.has(record.playerId)) return;
+    nextDevices[safeDeviceId] = record;
+    used.add(record.playerId);
+  });
+  state.devices = nextDevices;
 }
 
 function sanitizeDeviceId(deviceId) {

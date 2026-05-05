@@ -318,8 +318,9 @@
         </div>
         <div class="identity">
           <div class="seat-card"><strong id="mySeat">-</strong></div>
-          <div style="flex:2">
-            <p class="muted">这台手机只记录这个座位的分数，刷新不会变。</p>
+          <div style="flex:2;display:grid;gap:8px">
+            <p class="muted">这台手机只记录这个座位的分数，页面开着会自动保留；关闭或切后台太久会自动释放。</p>
+            <button type="button" class="danger" id="leaveBtn">离开座位</button>
           </div>
         </div>
       </section>
@@ -398,6 +399,8 @@
     const CLOUD_STATE_URL = "https://mantledb.sh/v2/paodekuai-scorekeeper-luge-1777905348/state";
     const CLOUD_MODE = location.hostname.endsWith("github.io") || location.search.includes("cloud=1");
     const POLL_MS = 1200;
+    const HEARTBEAT_MS = 20 * 1000;
+    const DEVICE_TTL_MS = 90 * 1000;
     const $ = (selector) => document.querySelector(selector);
     const dom = {
       mySeat: $("#mySeat"),
@@ -410,6 +413,7 @@
       scoreInput: $("#scoreInput"),
       submitBtn: $("#submitBtn"),
       withdrawBtn: $("#withdrawBtn"),
+      leaveBtn: $("#leaveBtn"),
       roundLabel: $("#roundLabel"),
       roundCount: $("#roundCount"),
       auditChip: $("#auditChip"),
@@ -427,7 +431,9 @@
     let me = "";
     let events = null;
     let pollTimer = null;
+    let heartbeatTimer = null;
     let toastTimer = null;
+    let leftManually = false;
     const deviceId = getDeviceId();
 
     function getDeviceId() {
@@ -458,6 +464,7 @@
     function join() {
       return post("/api/join", { deviceId }).then((data) => {
         me = data.assignedPlayerId;
+        leftManually = false;
         state = data;
         render();
       });
@@ -488,6 +495,9 @@
       pollTimer = setInterval(() => {
         readCloudState()
           .then((latest) => {
+            const activePlayer = devicePlayer(latest.devices?.[deviceId]);
+            if (activePlayer) me = activePlayer;
+            else if (me) me = "";
             state = publicStateFrom(latest);
             render();
             dom.connectChip.textContent = "云同步";
@@ -500,26 +510,82 @@
       }, POLL_MS);
     }
 
+    function devicePlayer(record) {
+      return record && typeof record === "object" && IDS.includes(record.playerId) ? record.playerId : "";
+    }
+
+    function touchDevice(playerId) {
+      return { playerId, lastSeen: new Date().toISOString() };
+    }
+
+    function cleanDeviceKey(value) {
+      const text = String(value || "").trim().slice(0, 80);
+      return /^[a-zA-Z0-9._:-]{8,80}$/.test(text) ? text : "";
+    }
+
+    function normalizeDevices(rawDevices = {}, now = Date.now()) {
+      const devices = {};
+      const used = new Set();
+      Object.entries(rawDevices || {}).forEach(([device, rawRecord]) => {
+        const key = cleanDeviceKey(device);
+        const record = normalizeDeviceRecord(rawRecord);
+        if (!key || !record || !isActiveDevice(record, now) || used.has(record.playerId)) return;
+        devices[key] = record;
+        used.add(record.playerId);
+      });
+      return devices;
+    }
+
+    function normalizeDeviceRecord(rawRecord) {
+      if (!rawRecord || typeof rawRecord !== "object") return null;
+      const playerId = rawRecord.playerId || rawRecord.id;
+      const lastSeen = String(rawRecord.lastSeen || rawRecord.seenAt || "").trim();
+      if (!IDS.includes(playerId) || !lastSeen) return null;
+      return { playerId, lastSeen };
+    }
+
+    function isActiveDevice(record, now = Date.now()) {
+      const seenAt = Date.parse(record?.lastSeen || "");
+      return IDS.includes(record?.playerId) && Number.isFinite(seenAt) && now - seenAt <= DEVICE_TTL_MS;
+    }
+
     async function cloudPost(path, data = {}) {
       const working = await readCloudState();
       let extra = {};
 
       if (path === "/api/join") {
-        const device = String(data.deviceId || "").slice(0, 80);
+        const device = cleanDeviceKey(data.deviceId);
         if (!device) throw new Error("设备身份无效，请刷新页面");
-        const existing = working.devices[device];
-        if (existing && IDS.includes(existing)) {
-          state = publicStateFrom(working, { assignedPlayerId: existing });
-          return state;
+        const existing = devicePlayer(working.devices[device]);
+        if (existing) {
+          working.devices[device] = touchDevice(existing);
+          extra.assignedPlayerId = existing;
+        } else {
+          const used = new Set(Object.values(working.devices || {}).map(devicePlayer).filter(Boolean));
+          const nextPlayer = IDS.find((id) => !used.has(id));
+          if (!nextPlayer) throw new Error("三个座位已经有人在线，请稍后再进或让其中一台手机点离开座位");
+          working.devices[device] = touchDevice(nextPlayer);
+          extra.assignedPlayerId = nextPlayer;
         }
-        const used = new Set(Object.values(working.devices || {}).filter((id) => IDS.includes(id)));
-        const nextPlayer = IDS.find((id) => !used.has(id));
-        if (!nextPlayer) throw new Error("三个座位已经分完了，请先清空后重新进入");
-        working.devices[device] = nextPlayer;
-        extra.assignedPlayerId = nextPlayer;
+      } else if (path === "/api/heartbeat") {
+        const device = cleanDeviceKey(data.deviceId);
+        if (!device) throw new Error("设备身份无效，请刷新页面");
+        const playerId = devicePlayer(working.devices[device]);
+        if (!playerId) throw new Error("座位已释放，请刷新后重新进入");
+        working.devices[device] = touchDevice(playerId);
+        extra.assignedPlayerId = playerId;
+      } else if (path === "/api/leave") {
+        const device = cleanDeviceKey(data.deviceId);
+        if (!device) throw new Error("设备身份无效，请刷新页面");
+        const playerId = devicePlayer(working.devices[device]);
+        if (playerId) {
+          delete working.devices[device];
+          extra.leftPlayerId = playerId;
+        }
       } else if (path === "/api/submit-score") {
-        const playerId = working.devices[String(data.deviceId || "")];
+        const playerId = devicePlayer(working.devices[cleanDeviceKey(data.deviceId)]);
         if (!playerId) throw new Error("本机还没有分配座位，请刷新页面");
+        working.devices[cleanDeviceKey(data.deviceId)] = touchDevice(playerId);
         const score = clean(Number(data.score));
         if (!Number.isFinite(score)) throw new Error("分数必须是数字");
         if (Number(data.roundNo) !== working.pending.roundNo) throw new Error("这一局已经变化，请刷新当前局后再提交");
@@ -531,8 +597,9 @@
         const submittedIds = Object.keys(working.pending.submissions).filter((id) => IDS.includes(id));
         if (submittedIds.length >= 2) extra.completedRound = completeCloudRound(working, submittedIds.slice(0, 2));
       } else if (path === "/api/withdraw-score") {
-        const playerId = working.devices[String(data.deviceId || "")];
+        const playerId = devicePlayer(working.devices[cleanDeviceKey(data.deviceId)]);
         if (!playerId) throw new Error("本机还没有分配座位，请刷新页面");
+        working.devices[cleanDeviceKey(data.deviceId)] = touchDevice(playerId);
         delete working.pending.submissions[playerId];
       } else if (path === "/api/undo-last") {
         if (!working.rounds.length) throw new Error("暂无可撤销记录");
@@ -565,6 +632,7 @@
 
     async function writeCloudState(nextState) {
       nextState.savedAt = new Date().toISOString();
+      nextState.devices = normalizeDevices(nextState.devices);
       const res = await fetch(CLOUD_STATE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -603,10 +671,7 @@
           };
         }
       });
-      const devices = {};
-      Object.entries(raw.devices || {}).forEach(([device, playerId]) => {
-        if (IDS.includes(playerId)) devices[String(device).slice(0, 80)] = playerId;
-      });
+      const devices = normalizeDevices(raw.devices || {});
       return { players, rounds, nextRoundNo, pending, devices, savedAt: raw.savedAt || null };
     }
 
@@ -662,6 +727,7 @@
       dom.mySeat.textContent = current ? current.seat : "-";
       dom.assignedText.textContent = current ? `已分配 ${current.seat}` : "未分配";
       dom.submitBtn.disabled = !current;
+      dom.leaveBtn.textContent = current ? "离开座位" : "重新入座";
     }
 
     function renderPending() {
@@ -722,6 +788,65 @@
       dom.clearBtn.disabled = !hasRounds && Object.keys(state.pending.submissions || {}).length === 0;
     }
 
+    function startHeartbeat() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_MS);
+      sendHeartbeat();
+    }
+
+    function stopHeartbeat() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+
+    function sendHeartbeat() {
+      if (!me || document.visibilityState === "hidden") return Promise.resolve();
+      return post("/api/heartbeat", { deviceId })
+        .then((data) => {
+          if (data.assignedPlayerId) me = data.assignedPlayerId;
+          state = data;
+          render();
+        })
+        .catch((error) => {
+          dom.connectChip.textContent = "重连中";
+          dom.connectChip.className = "chip bad";
+          if (String(error.message || "").includes("释放")) {
+            me = "";
+            stopHeartbeat();
+            render();
+            toast(error.message);
+          }
+        });
+    }
+
+    function enterSeat() {
+      return join()
+        .then(() => {
+          startHeartbeat();
+          toast("已入座");
+        })
+        .catch((error) => toast(error.message));
+    }
+
+    function leaveSeat() {
+      if (!me) return enterSeat();
+      const currentSeat = player(me)?.seat || "";
+      leftManually = true;
+      stopHeartbeat();
+      return post("/api/leave", { deviceId })
+        .then((data) => {
+          me = "";
+          state = data;
+          render();
+          toast(currentSeat ? `${currentSeat} 已空出来` : "已离开座位");
+        })
+        .catch((error) => {
+          leftManually = false;
+          startHeartbeat();
+          toast(error.message);
+        });
+    }
+
     dom.scoreForm.onsubmit = (event) => {
       event.preventDefault();
       if (!me) return toast("还没分配座位");
@@ -743,6 +868,8 @@
         })
         .catch((error) => toast(error.message));
     };
+
+    dom.leaveBtn.onclick = () => leaveSeat();
 
     dom.undoBtn.onclick = () => confirm("撤销最近一局？") && post("/api/undo-last").then(() => toast("已撤销")).catch((error) => toast(error.message));
     dom.clearBtn.onclick = () => confirm("清空整场分数？") && post("/api/clear").then(() => {
@@ -796,6 +923,12 @@
       }
       toast("结算已复制");
     };
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible" || leftManually) return;
+      if (me) sendHeartbeat();
+      else enterSeat();
+    });
 
     function getTotals() {
       return state.players.reduce((acc, p) => {
@@ -857,10 +990,15 @@
       toastTimer = setTimeout(() => dom.toast.classList.remove("show"), 1800);
     }
 
-    join().then(connect).catch((error) => {
+    join().then(() => {
+      connect();
+      startHeartbeat();
+    }).catch((error) => {
       dom.connectChip.textContent = "连接失败";
       dom.connectChip.className = "chip bad";
+      dom.mySeat.textContent = "-";
       dom.assignedText.textContent = "分配失败";
+      dom.leaveBtn.textContent = "重新入座";
       toast(error.message);
     });
   </script>
